@@ -1,0 +1,18 @@
+node_modules/
+.docker/mongodb/data/
+.env
+.gcp_develop_creds.json
+.npmrc
+.vscode
+.idea
+# Ignore txt files
+**/*.txt
+# Ignore log files
+**/*.log
+**/log
+# Ignore tmp files
+**/tmp
+# Ignore data files
+**/data
+# Ignore migrations
+.migrate

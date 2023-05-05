@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "eth-ecies": "^1.0.6",
+    "ethers": "5.7.0",
+    "lowdb": "^6.0.1",
+    "uuid": "^9.0.0"
+  }
+}
