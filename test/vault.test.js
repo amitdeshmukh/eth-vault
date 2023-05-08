@@ -39,14 +39,16 @@ describe("Vault", () => {
   it("should allow the owner to add members with different roles", async () => {
     const addMemberMessage1 = {
       publicKey: contributorKeys.publicKey,
-      role: "Contributor"
+      role: "Contributor",
+      action: "addMember"
     };
     const addMemberSignature1 = await signMessage(ownerKeys.privateKey, addMemberMessage1);
     contributorId = await vault.addMember(ownerId, addMemberMessage1, addMemberSignature1);
 
     const addMemberMessage2 = {
       publicKey: viewerKeys.publicKey,
-      role: "Viewer"
+      role: "Viewer",
+      action: "addMember"
     };
     const addMemberSignature2 = await signMessage(ownerKeys.privateKey, addMemberMessage2);
     viewerId = await vault.addMember(ownerId, addMemberMessage2, addMemberSignature2);
@@ -78,7 +80,8 @@ describe("Vault", () => {
     const message2 = "This is another secret message.";
 
     const storeDataMessage = {
-        content: message
+      action: "storeContent",
+      content: message
     };
     const storeDataSignature = await signMessage(ownerKeys.privateKey, storeDataMessage);
     await vault.storeData(ownerId, ownerKeys.privateKey, storeDataMessage, storeDataSignature);
@@ -91,7 +94,8 @@ describe("Vault", () => {
     expect(decryptedData).to.equal(message);
 
     const storeDataMessage2 = {
-        content: message2
+      action: "storeContent",
+      content: message2
     };
     const storeDataSignature2 = await signMessage(contributorKeys.privateKey, storeDataMessage2);
     await vault.storeData(contributorId, contributorKeys.privateKey, storeDataMessage2, storeDataSignature2);
@@ -124,7 +128,8 @@ describe("Vault", () => {
   it("should allow the owner to change a member's role", async () => {
     const changeMemberRoleMessage = {
       memberId: viewerId,
-      role: "Contributor"
+      role: "Contributor",
+      action: "changeRole"
     };
     const changeMemberRoleSignature = await signMessage(ownerKeys.privateKey, changeMemberRoleMessage);
     await vault.changeMemberRole(ownerId, changeMemberRoleMessage, changeMemberRoleSignature);
@@ -134,6 +139,7 @@ describe("Vault", () => {
 
   it("should allow the owner to remove a member", async () => {
     const removeMemberMessage = {
+      action: "removeMember",
       memberId: viewerId
     };
     const removeMemberSignature = await signMessage(ownerKeys.privateKey, removeMemberMessage);

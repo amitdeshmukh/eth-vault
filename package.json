@@ -1,13 +1,31 @@
 {
+  "name": "eth-vault",
+  "version": "1.0.0",
+  "description": "An encrypted data vault for Ethereum accounts with role-based access control.",
+  "main": "src/index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/amitdeshmukh/eth-vault.git"
+  },
+  "keywords": [
+    "encryption",
+    "ethereum",
+    "vault",
+    "access control",
+    "role-based"
+  ],
+  "author": "@amitdeshmukh",
+  "license": "MIT",
   "dependencies": {
-    "eth-ecies": "^1.0.6",
+    "eth-ecies": "1.0.6",
     "ethers": "5.7.0",
+    "joi": "^17.9.2",
     "lowdb": "1.0.0",
-    "uuid": "^9.0.0"
+    "uuid": "9.0.0"
   },
   "devDependencies": {
-    "chai": "^4.3.7",
-    "mocha": "^10.2.0"
+    "chai": "4.3.7",
+    "mocha": "10.2.0"
   },
   "scripts": {
     "test": "mocha --recursive test/"

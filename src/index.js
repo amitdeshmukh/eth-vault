@@ -1,17 +1,26 @@
-// Import required dependencies
-const fs = require('fs');
+// Required dependencies
 const crypto = require('crypto');
 const { ethers } = require("ethers");
 const { v5: uuidv5, v4: uuidv4 } = require('uuid');
 const pubKeyToAddress = require('./utils/computeAddress');
 const verifySignature = require('./utils/verifySignature');
 const { encryptWithPublicKey, decryptWithPrivateKey } = require('./utils/cryptoMethods');
-const decryptData = require('./utils/decryptData');
+
+// Validation
+const {
+  addMemberMessageSchema,
+  removeMemberMessageSchema,
+  changeMemberRoleMessageSchema,
+  storeDataMessageSchema,
+  deleteVaultMessageSchema,
+} = require('./validation');
+
+// Storage
 const LowDB = require('./storage/LowDB');
 const InMemoryDB = require('./storage/InMemoryDB');
 
 // Example UUIDv4 as a namespace
-const NAMESPACE = '7b44e4d4-7eae-4ff4-9a9b-2a2c8a51f6b9'; 
+const NAMESPACE = process.env.NAMESPACE || uuidv4(); 
 
 // Define the Vault class
 class Vault {
@@ -50,8 +59,11 @@ class Vault {
 
   // Generate a shared key for all members and encrypt it using their public keys
   async #generateSharedKey() {
-    const randomBytes = ethers.utils.randomBytes(32);
-    const sharedKey = ethers.utils.hexlify(randomBytes).slice(2);
+    const randomBytes = crypto.randomBytes(16);
+    const salt = crypto.randomBytes(16);
+    const derivedKey = crypto.scryptSync(randomBytes, salt, 32);
+
+    const sharedKey = ethers.utils.hexlify(derivedKey).slice(2);
 
     for (const memberId in this.#members) {
       const publicKey = this.#members[memberId].publicKey;
@@ -79,6 +91,10 @@ class Vault {
 
   // Add a member to the vault with the specified role and public key in message
   async addMember(requesterId, addMemberMessage, addMemberSignature) {
+    const { error: addMemberError } = addMemberMessageSchema.validate(addMemberMessage);
+    if (addMemberError) {
+      throw new Error('Invalid addMember message format');
+    }
     const { address } = this.#members[requesterId];
     const validSignature = await verifySignature(address, addMemberMessage, addMemberSignature);
     if (!validSignature || this.getMemberRole(requesterId) !== 'Owner') {
@@ -100,6 +116,11 @@ class Vault {
 
   // Remove a member from the vault by their memberId
   async removeMember(requesterId, removeMemberMessage, removeMemberSignature) {
+    const { error: removeMemberError } = removeMemberMessageSchema.validate(removeMemberMessage);
+    if (removeMemberError) {
+      throw new Error('Invalid removeMember message format');
+    }
+
     const { address } = this.#members[requesterId];
     const validSignature = await verifySignature(address, removeMemberMessage, removeMemberSignature);
 
@@ -122,6 +143,11 @@ class Vault {
 
   // Change the role of a member
   async changeMemberRole(requesterId, changeMemberRoleMessage, changeMemberRoleSignature) {
+    const { error: changeMemberRoleError } = changeMemberRoleMessageSchema.validate(changeMemberRoleMessage);
+    if (changeMemberRoleError) {
+      throw new Error('Invalid changeMemberRole message format');
+    }
+
     const { address } = this.#members[requesterId];
     const validSignature = await verifySignature(address, changeMemberRoleMessage, changeMemberRoleSignature);
 
@@ -176,6 +202,11 @@ class Vault {
 
   // Store encrypted data in the vault
   async storeData(memberId, privateKey, storeDataMessage, storeDataSignature) {
+    const { error: storeDataError } = storeDataMessageSchema.validate(storeDataMessage);
+    if (storeDataError) {
+      throw new Error('Invalid storeData message format');
+    }
+    
     const { address } = this.#members[memberId];
     const validSignature = await verifySignature(address, storeDataMessage, storeDataSignature);
     const memberRole = this.getMemberRole(memberId);
@@ -229,6 +260,11 @@ class Vault {
   };
 
   async deleteVault(requesterId, deleteVaultMessage, deleteVaultSignature) {
+    const { error: deleteVaultError } = deleteVaultMessageSchema.validate(deleteVaultMessage);
+    if (deleteVaultError) {
+      throw new Error('Invalid deleteVault message format');
+    }
+    
     if (!this.#members[requesterId]) {
       throw new Error('Member not found or access revoked');
     }
