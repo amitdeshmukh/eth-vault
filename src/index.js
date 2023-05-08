@@ -32,6 +32,12 @@ class Vault {
 
   // Initialize the Vault object with the file path and the owner's public key
   constructor(ownerPublicKey, name, description, storageType) {
+    // Validate the name and description fields
+    const { error, value } = nameDescriptionSchema.validate({ name, description });
+    if (error) {
+      throw new Error(`Invalid name or description: ${error.message}`);
+    }
+    
     this.#vaultId = uuidv4();
     this.#vaultFile = `${this.#vaultId}.json`;
     
@@ -264,7 +270,7 @@ class Vault {
     if (deleteVaultError) {
       throw new Error('Invalid deleteVault message format');
     }
-    
+
     if (!this.#members[requesterId]) {
       throw new Error('Member not found or access revoked');
     }

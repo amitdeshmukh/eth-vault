@@ -1,5 +1,10 @@
 const Joi = require('joi');
 
+const nameDescriptionSchema = Joi.object({
+  name: Joi.string().min(1).max(255).required(),
+  description: Joi.string().min(1).max(255).optional().allow('')
+});
+
 const addMemberMessageSchema = Joi.object({
   action: Joi.string().valid('addMember').required(),
   role: Joi.string().valid('Owner', 'Contributor', 'Viewer').required(),
