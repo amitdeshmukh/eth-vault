@@ -2,11 +2,13 @@
 const fs = require('fs');
 const crypto = require('crypto');
 const { ethers } = require("ethers");
-const { v5: uuidv5, v4: uuidv4, v4 } = require('uuid');
+const { v5: uuidv5, v4: uuidv4 } = require('uuid');
 const pubKeyToAddress = require('./utils/computeAddress');
 const verifySignature = require('./utils/verifySignature');
 const { encryptWithPublicKey, decryptWithPrivateKey } = require('./utils/cryptoMethods');
-const getVaultOwner = require('./utils/getVaultOwner');
+const decryptData = require('./utils/decryptData');
+const LowDB = require('./storage/LowDB');
+const InMemoryDB = require('./storage/InMemoryDB');
 
 // Example UUIDv4 as a namespace
 const NAMESPACE = '7b44e4d4-7eae-4ff4-9a9b-2a2c8a51f6b9'; 
@@ -17,21 +19,32 @@ class Vault {
   #vaultId;
   #members;
   #ownerId;
+  #db;
+
   // Initialize the Vault object with the file path and the owner's public key
-  constructor(ownerPublicKey, name, description) {
+  constructor(ownerPublicKey, name, description, storageType) {
     this.#vaultId = uuidv4();
     this.#vaultFile = `${this.#vaultId}.json`;
-
-    if (!fs.existsSync(this.#vaultFile)) {
-      fs.writeFileSync(this.#vaultFile, '');
+    
+    // Initialize the storage
+    switch (storageType) {
+      case 'lowdb':
+        this.#db = new LowDB(this.#vaultFile);
+        break;
+      case 'inmemory':
+        this.#db = new InMemoryDB();
+        break;
+      default:
+        this.#db = new InMemoryDB();
+        break;
     }
-    this.#members = {};
 
-    fs.writeFileSync(this.#vaultFile, JSON.stringify({
-      id: this.#vaultId,
-      name: name,
-      description: description,
-    }, null, 2));
+    this.#db.initialize(this.#vaultFile);
+    this.#db.set('id', this.#vaultId);
+    this.#db.set('name', name);
+    this.#db.set('description', description);
+
+    this.#members = {};
     this.#addOwner(ownerPublicKey);
   }
 
@@ -59,12 +72,13 @@ class Vault {
       address: pubKeyToAddress(publicKey)
     };
     await this.#generateSharedKey();
+    await this.#db.set('members', this.#members);
+
     return this.#ownerId;
   }
 
   // Add a member to the vault with the specified role and public key in message
   async addMember(requesterId, addMemberMessage, addMemberSignature) {
-    console.log(this.#members)
     const { address } = this.#members[requesterId];
     const validSignature = await verifySignature(address, addMemberMessage, addMemberSignature);
     if (!validSignature || this.getMemberRole(requesterId) !== 'Owner') {
@@ -79,6 +93,8 @@ class Vault {
       address: pubKeyToAddress(addMemberMessage.publicKey)
     };
     await this.#generateSharedKey();
+    await this.#db.set('members', this.#members);
+
     return memberId;
   }
 
@@ -95,6 +111,29 @@ class Vault {
     if (this.#members[memberId]) {
       delete this.#members[memberId];
       await this.#generateSharedKey();
+      await this.#db.set('members', this.#members);
+
+      return true
+    } else {
+      console.log(`Member ID ${memberId} not found`);
+      return false
+    }
+  }
+
+  // Change the role of a member
+  async changeMemberRole(requesterId, changeMemberRoleMessage, changeMemberRoleSignature) {
+    const { address } = this.#members[requesterId];
+    const validSignature = await verifySignature(address, changeMemberRoleMessage, changeMemberRoleSignature);
+
+    if (!validSignature || this.getMemberRole(requesterId) !== 'Owner') {
+      throw new Error('Only the owner can change member roles');
+    }
+
+    const memberId = changeMemberRoleMessage.memberId;
+    const newRole = changeMemberRoleMessage.role;
+    if (this.#members[memberId]) {
+      this.#members[memberId].role = newRole;
+      await this.#db.set('members', this.#members);
       return true
     } else {
       console.log(`Member ID ${memberId} not found`);
@@ -135,26 +174,6 @@ class Vault {
     }
   }
 
-  // Change the role of a member
-  async changeMemberRole(requesterId, changeMemberRoleMessage, changeMemberRoleSignature) {
-    const { address } = this.#members[requesterId];
-    const validSignature = await verifySignature(address, changeMemberRoleMessage, changeMemberRoleSignature);
-
-    if (!validSignature || this.getMemberRole(requesterId) !== 'Owner') {
-      throw new Error('Only the owner can change member roles');
-    }
-
-    const memberId = changeMemberRoleMessage.memberId;
-    const newRole = changeMemberRoleMessage.role;
-    if (this.#members[memberId]) {
-      this.#members[memberId].role = newRole;
-      return true
-    } else {
-      console.log(`Member ID ${memberId} not found`);
-      return false
-    }
-  }
-
   // Store encrypted data in the vault
   async storeData(memberId, privateKey, storeDataMessage, storeDataSignature) {
     const { address } = this.#members[memberId];
@@ -162,7 +181,7 @@ class Vault {
     const memberRole = this.getMemberRole(memberId);
 
     if (!validSignature || !['Owner', 'Contributor'].includes(memberRole)) {
-      throw new Error("Member doesn't have permission to store data");
+      throw new Error("Member doesn't have permission to store content");
     }
 
     if (!this.#members[memberId].encryptedSharedKey) {
@@ -171,40 +190,40 @@ class Vault {
 
     try {
       const sharedKey = await decryptWithPrivateKey(privateKey, this.#members[memberId].encryptedSharedKey);
-      const data = storeDataMessage.data;
+      const content = storeDataMessage.content;
       const iv = crypto.randomBytes(16);
       const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(sharedKey, 'hex'), iv);
-      let encryptedData = cipher.update(data, 'utf8', 'hex');
+      let encryptedData = cipher.update(content, 'utf8', 'hex');
       encryptedData += cipher.final('hex');
       const authTag = cipher.getAuthTag().toString('hex');
-      fs.writeFileSync(this.#vaultFile, JSON.stringify({
+
+      await this.#db.set('content', {
         timestamp: Date.now(),
         iv: iv.toString('hex'),
         authTag,
         encryptedData
-      }, null, 2));
+      });
+
     } catch (e) {
-      console.error('Failed to store encrypted data', e.message);
+      console.error('Failed to store encrypted content', e.message);
       throw(e);
     }
   };
 
   // Read encrypted data from the vault
-  async readData(memberId, privateKey) {
+  async readData(memberId) {
     if (!this.#members[memberId].encryptedSharedKey) {
       throw new Error('Member ID not found or access revoked');
     }
 
     try {
-      const sharedKey = await decryptWithPrivateKey(privateKey, this.#members[memberId].encryptedSharedKey);
-      const { iv, authTag, encryptedData } = JSON.parse(fs.readFileSync(this.#vaultFile, 'utf8'));
-      const decipher = crypto.createDecipheriv('aes-256-gcm', Buffer.from(sharedKey, 'hex'), Buffer.from(iv, 'hex'));
-      decipher.setAuthTag(Buffer.from(authTag, 'hex'));
-      let decryptedData = decipher.update(encryptedData, 'hex', 'utf8');
-      decryptedData += decipher.final('utf8');
-      return decryptedData;
+      const content = await this.#db.get('content');
+      return {
+        content: content,
+        encryptedSharedKey: this.#members[memberId].encryptedSharedKey
+      }
     } catch (e) {
-      console.error('Failed to read encrypted data', e.message);
+      console.error('Failed to read encrypted content', e.message);
       throw(e);
     }
   };
@@ -227,12 +246,12 @@ class Vault {
       throw new Error('Only an Owner can delete the vault');
     }
 
-    // Delete the vault file
     try {
-      fs.unlinkSync(this.#vaultFile);
-      console.log('Vault file deleted successfully');
-    } catch (err) {
-      console.error(`Error deleting vault: ${err.message}`);
+      await this.#db.destroy();
+      return true;
+    } catch (e) {
+      console.error('Failed to delete vault', e.message);
+      throw(e);
     }
   }
 
