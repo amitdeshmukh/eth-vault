@@ -1,3 +1,5 @@
+archive/
+logs/
 node_modules/
 .docker/mongodb/data/
 .env

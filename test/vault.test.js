@@ -1,7 +1,7 @@
 const { expect } = require("chai");
 const { ethers } = require("ethers");
-const Vault = require("../src/index");
-const decryptData = require('../src/utils/decryptData');
+const Vault = require("../src/service/index");
+const decryptData = require('../src/client/decrypt');
 
 // Generate a random wallet
 const generateKeyPair = () => {

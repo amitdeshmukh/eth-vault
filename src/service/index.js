@@ -2,12 +2,13 @@
 const crypto = require('crypto');
 const { ethers } = require("ethers");
 const { v5: uuidv5, v4: uuidv4 } = require('uuid');
-const pubKeyToAddress = require('./utils/computeAddress');
+const pubKeyToAddress = require('./utils/pubKeyToAddress');
 const verifySignature = require('./utils/verifySignature');
-const { encryptWithPublicKey, decryptWithPrivateKey } = require('./utils/cryptoMethods');
+const encryptWithPublicKey = require('./utils/encryptWithPublicKey');
 
 // Validation
 const {
+  nameDescriptionSchema,
   addMemberMessageSchema,
   removeMemberMessageSchema,
   changeMemberRoleMessageSchema,
@@ -33,7 +34,7 @@ class Vault {
   // Initialize the Vault object with the file path and the owner's public key
   constructor(ownerPublicKey, name, description, storageType) {
     // Validate the name and description fields
-    const { error, value } = nameDescriptionSchema.validate({ name, description });
+    const { error } = nameDescriptionSchema.validate({ name, description });
     if (error) {
       throw new Error(`Invalid name or description: ${error.message}`);
     }
@@ -91,7 +92,6 @@ class Vault {
     };
     await this.#generateSharedKey();
     await this.#db.set('members', this.#members);
-
     return this.#ownerId;
   }
 
@@ -99,7 +99,7 @@ class Vault {
   async addMember(requesterId, addMemberMessage, addMemberSignature) {
     const { error: addMemberError } = addMemberMessageSchema.validate(addMemberMessage);
     if (addMemberError) {
-      throw new Error('Invalid addMember message format');
+      throw new Error(`Invalid addMember message format`);
     }
     const { address } = this.#members[requesterId];
     const validSignature = await verifySignature(address, addMemberMessage, addMemberSignature);
@@ -156,7 +156,6 @@ class Vault {
 
     const { address } = this.#members[requesterId];
     const validSignature = await verifySignature(address, changeMemberRoleMessage, changeMemberRoleSignature);
-
     if (!validSignature || this.getMemberRole(requesterId) !== 'Owner') {
       throw new Error('Only the owner can change member roles');
     }
@@ -172,7 +171,16 @@ class Vault {
       return false
     }
   }
-  
+
+  // Get the Encrypted Shared Key for a member
+  getEncryptedSharedKey(memberId) {
+    if (this.#members[memberId]) {
+      return this.#members[memberId].encryptedSharedKey;
+    } else {
+      return null;
+    }
+  }  
+
   // Get a list of vault owners
   getOwners() {
     const owners = [];
@@ -207,10 +215,10 @@ class Vault {
   }
 
   // Store encrypted data in the vault
-  async storeData(memberId, privateKey, storeDataMessage, storeDataSignature) {
+  async storeData(memberId, storeDataMessage, storeDataSignature) {
     const { error: storeDataError } = storeDataMessageSchema.validate(storeDataMessage);
     if (storeDataError) {
-      throw new Error('Invalid storeData message format');
+      throw new Error(`Invalid storeData message format`);
     }
     
     const { address } = this.#members[memberId];
@@ -226,22 +234,13 @@ class Vault {
     }
 
     try {
-      const sharedKey = await decryptWithPrivateKey(privateKey, this.#members[memberId].encryptedSharedKey);
-      const content = storeDataMessage.content;
-      const iv = crypto.randomBytes(16);
-      const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(sharedKey, 'hex'), iv);
-      let encryptedData = cipher.update(content, 'utf8', 'hex');
-      encryptedData += cipher.final('hex');
-      const authTag = cipher.getAuthTag().toString('hex');
-
-      await this.#db.set('content', {
+      this.#db.set('content', {
         timestamp: Date.now(),
-        iv: iv.toString('hex'),
-        authTag,
-        encryptedData
+        iv: storeDataMessage.iv,
+        authTag: storeDataMessage.authTag,
+        encryptedData: storeDataMessage.encryptedData
       });
-
-    } catch (e) {
+    } catch(e) {
       console.error('Failed to store encrypted content', e.message);
       throw(e);
     }

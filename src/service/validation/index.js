@@ -24,7 +24,9 @@ const changeMemberRoleMessageSchema = Joi.object({
 
 const storeDataMessageSchema = Joi.object({
   action: Joi.string().valid('storeContent').required(),
-  content: Joi.string().required(),
+  iv: Joi.string().required(),
+  authTag: Joi.string().required(),
+  encryptedData: Joi.string().required(),
 });
 
 const deleteVaultMessageSchema = Joi.object({
@@ -32,6 +34,7 @@ const deleteVaultMessageSchema = Joi.object({
 });
 
 module.exports = {
+  nameDescriptionSchema,
   addMemberMessageSchema,
   removeMemberMessageSchema,
   changeMemberRoleMessageSchema,
