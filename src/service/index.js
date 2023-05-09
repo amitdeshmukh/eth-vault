@@ -218,7 +218,7 @@ class Vault {
   async storeData(memberId, storeDataMessage, storeDataSignature) {
     const { error: storeDataError } = storeDataMessageSchema.validate(storeDataMessage);
     if (storeDataError) {
-      throw new Error(`Invalid storeData message format`);
+      throw new Error(`Invalid storeData message format: ${storeDataError.message}`);
     }
     
     const { address } = this.#members[memberId];

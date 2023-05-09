@@ -1,7 +1,8 @@
 const { expect } = require("chai");
 const { ethers } = require("ethers");
 const Vault = require("../src/service/index");
-const decryptData = require('../src/client/decrypt');
+const { decryptContent } = require('../src/client/decrypt');
+const encryptAndSignContent = require('../src/client/encryptAndSignContent');
 
 // Generate a random wallet
 const generateKeyPair = () => {
@@ -76,35 +77,33 @@ describe("Vault", () => {
   });
 
   it("should allow authorized users to successfully store and read encrypted data", async () => {
-    const message = "This is a secret message.";
+    const message1 = "This is a secret message.";
     const message2 = "This is another secret message.";
 
-    const storeDataMessage = {
-      action: "storeContent",
-      content: message
-    };
-    const storeDataSignature = await signMessage(ownerKeys.privateKey, storeDataMessage);
-    await vault.storeData(ownerId, ownerKeys.privateKey, storeDataMessage, storeDataSignature);
+    // Obtain the shared key for the vault
+    let sharedKeyEncrypted = await vault.getEncryptedSharedKey(ownerId);
+    // Encrypt and store message1 in the vault
+    let r = await encryptAndSignContent(message1, ownerKeys.privateKey, sharedKeyEncrypted)
+    await vault.storeData(ownerId, r.storeDataMessage, r.storeDataSignature);
 
     let response = await vault.readData(contributorId);
     let content = response.content;
     let encryptedSharedKey = response.encryptedSharedKey;
-    const decryptedData = await decryptData(content.encryptedData, content.iv, content.authTag, encryptedSharedKey, contributorKeys.privateKey);
+    const decryptedData = await decryptContent(content.encryptedData, content.iv, content.authTag, encryptedSharedKey, contributorKeys.privateKey);
 
-    expect(decryptedData).to.equal(message);
+    expect(decryptedData).to.equal(message1);
 
-    const storeDataMessage2 = {
-      action: "storeContent",
-      content: message2
-    };
-    const storeDataSignature2 = await signMessage(contributorKeys.privateKey, storeDataMessage2);
-    await vault.storeData(contributorId, contributorKeys.privateKey, storeDataMessage2, storeDataSignature2);
+    // Obtain the shared key for the vault
+    sharedKeyEncrypted = await vault.getEncryptedSharedKey(ownerId);
+    // Encrypt and store message2 in the vault
+    r = await encryptAndSignContent(message2, ownerKeys.privateKey, sharedKeyEncrypted)
+    await vault.storeData(ownerId, r.storeDataMessage, r.storeDataSignature);
 
     response = await vault.readData(ownerId);
     content = response.content;
     encryptedSharedKey = response.encryptedSharedKey;
 
-    const decryptedData2 = await decryptData(content.encryptedData, content.iv, content.authTag, encryptedSharedKey, ownerKeys.privateKey);
+    const decryptedData2 = await decryptContent(content.encryptedData, content.iv, content.authTag, encryptedSharedKey, ownerKeys.privateKey);
     expect(decryptedData2).to.equal(message2);
   });
 
@@ -118,7 +117,7 @@ describe("Vault", () => {
 
     let errorThrown = false;
     try {
-      await vault.storeData(viewerId, viewerKeys.privateKey, storeDataMessage, storeDataSignature);
+      await vault.storeData(viewerId, storeDataMessage, storeDataSignature);
     } catch (e) {
       errorThrown = true;
     }
